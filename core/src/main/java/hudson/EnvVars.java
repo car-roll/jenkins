@@ -1,18 +1,18 @@
 /*
  * The MIT License
- * 
+ *
  * Copyright (c) 2004-2009, Sun Microsystems, Inc., Kohsuke Kawaguchi, Red Hat, Inc.
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -33,8 +33,10 @@ import jenkins.security.MasterToSlaveCallable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +45,8 @@ import java.util.Arrays;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
 import edu.umd.cs.findbugs.annotations.NonNull;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 
@@ -76,6 +80,8 @@ import edu.umd.cs.findbugs.annotations.CheckForNull;
 public class EnvVars extends TreeMap<String,String> {
     private static final long serialVersionUID = 4320331661987259022L;
     private static Logger LOGGER = Logger.getLogger(EnvVars.class.getName());
+    private Set<String> watchedVars;
+
     /**
      * If this {@link EnvVars} object represents the whole environment variable set,
      * not just a partial list used for overriding later, then we need to know
@@ -86,7 +92,7 @@ public class EnvVars extends TreeMap<String,String> {
      * So this property remembers that information.
      */
     private Platform platform;
-    
+
     /**
      * Gets the platform for which these env vars targeted.
      * @since 2.144
@@ -106,6 +112,7 @@ public class EnvVars extends TreeMap<String,String> {
     }
     public EnvVars() {
         super(CaseInsensitiveComparator.INSTANCE);
+        watchedVars = new HashSet<>();
     }
 
     public EnvVars(@NonNull Map<String,String> m) {
@@ -124,6 +131,7 @@ public class EnvVars extends TreeMap<String,String> {
     public EnvVars(@NonNull EnvVars m) {
         // this constructor is so that in future we can get rid of the downcasting.
         this((Map)m);
+        watchedVars.addAll(m.getWatchedVars());
     }
 
     /**
@@ -182,9 +190,9 @@ public class EnvVars extends TreeMap<String,String> {
 
     /**
      * Calculates the order to override variables.
-     * 
+     *
      * Sort variables with topological sort with their reference graph.
-     * 
+     *
      * This is package accessible for testing purpose.
      */
     static class OverrideOrderCalculator {
@@ -194,30 +202,30 @@ public class EnvVars extends TreeMap<String,String> {
         private static class TraceResolver implements VariableResolver<String> {
             private final Comparator<? super String> comparator;
             public Set<String> referredVariables;
-            
+
             public TraceResolver(Comparator<? super String> comparator) {
                 this.comparator = comparator;
                 clear();
             }
-            
+
             public void clear() {
                 referredVariables = new TreeSet<>(comparator);
             }
-            
+
             public String resolve(String name) {
                 referredVariables.add(name);
                 return "";
             }
         }
-        
+
         private static class VariableReferenceSorter extends CyclicGraphDetector<String> {
             // map from a variable to a set of variables that variable refers.
             private final Map<String, Set<String>> refereeSetMap;
-            
+
             public VariableReferenceSorter(Map<String, Set<String>> refereeSetMap) {
                 this.refereeSetMap = refereeSetMap;
             }
-            
+
             @Override
             protected Iterable<? extends String> getEdges(String n) {
                 // return variables referred from the variable.
@@ -230,32 +238,32 @@ public class EnvVars extends TreeMap<String,String> {
         }
 
         private final Comparator<? super String> comparator;
-        
+
         @NonNull
         private final EnvVars target;
         @NonNull
         private final Map<String,String> overrides;
-        
+
         private Map<String, Set<String>> refereeSetMap;
         private List<String> orderedVariableNames;
-        
+
         public OverrideOrderCalculator(@NonNull EnvVars target, @NonNull Map<String,String> overrides) {
             comparator = target.comparator();
             this.target = target;
             this.overrides = overrides;
             scan();
         }
-        
+
         public List<String> getOrderedVariableNames() {
             return orderedVariableNames;
         }
-        
+
         // Cut the reference to the variable in a cycle.
         private void cutCycleAt(String referee, List<String> cycle) {
             // cycle contains variables in referrer-to-referee order.
             // This should not be negative, for the first and last one is same.
             int refererIndex = cycle.lastIndexOf(referee) - 1;
-            
+
             assert(refererIndex >= 0);
             String referrer = cycle.get(refererIndex);
             boolean removed = refereeSetMap.get(referrer).remove(referee);
@@ -263,7 +271,7 @@ public class EnvVars extends TreeMap<String,String> {
             LOGGER.warning(String.format("Cyclic reference detected: %s", Util.join(cycle," -> ")));
             LOGGER.warning(String.format("Cut the reference %s -> %s", referrer, referee));
         }
-        
+
         // Cut the variable reference in a cycle.
         private void cutCycle(List<String> cycle) {
             // if an existing variable is contained in that cycle,
@@ -280,20 +288,20 @@ public class EnvVars extends TreeMap<String,String> {
                     return;
                 }
             }
-            
+
             // if not, cut the reference to the first one.
             cutCycleAt(cycle.get(0), cycle);
         }
-        
+
         /**
          * Scan all variables and list all referring variables.
          */
         public void scan() {
             refereeSetMap = new TreeMap<>(comparator);
             List<String> extendingVariableNames = new ArrayList<>();
-            
+
             TraceResolver resolver = new TraceResolver(comparator);
-            
+
             for (Map.Entry<String, String> entry: overrides.entrySet()) {
                 if (entry.getKey().indexOf('+') > 0) {
                     // XYZ+AAA variables should be always processed in last.
@@ -302,14 +310,14 @@ public class EnvVars extends TreeMap<String,String> {
                 }
                 resolver.clear();
                 Util.replaceMacro(entry.getValue(), resolver);
-                
+
                 // Variables directly referred from the current scanning variable.
                 Set<String> refereeSet = resolver.referredVariables;
                 // Ignore self reference.
                 refereeSet.remove(entry.getKey());
                 refereeSetMap.put(entry.getKey(), refereeSet);
             }
-            
+
             VariableReferenceSorter sorter;
             while(true) {
                 sorter = new VariableReferenceSorter(refereeSetMap);
@@ -325,12 +333,12 @@ public class EnvVars extends TreeMap<String,String> {
                 }
                 break;
             }
-            
+
             // When A refers B, the last appearance of B always comes after
             // the last appearance of A.
             List<String> reversedDuplicatedOrder = new ArrayList<>(sorter.getSorted());
             Collections.reverse(reversedDuplicatedOrder);
-            
+
             orderedVariableNames = new ArrayList<>(overrides.size());
             for(String key: reversedDuplicatedOrder) {
                 if(overrides.containsKey(key) && !orderedVariableNames.contains(key)) {
@@ -341,7 +349,7 @@ public class EnvVars extends TreeMap<String,String> {
             orderedVariableNames.addAll(extendingVariableNames);
         }
     }
-    
+
 
     /**
      * Overrides all values in the map by the given map. Expressions in values will be expanded.
@@ -397,7 +405,7 @@ public class EnvVars extends TreeMap<String,String> {
         map.forEach(this::putIfNotNull);
     }
 
-    
+
     /**
      * Takes a string that looks like "a=b" and adds that to this map.
      */
@@ -406,6 +414,42 @@ public class EnvVars extends TreeMap<String,String> {
         if(sep > 0) {
             put(line.substring(0,sep),line.substring(sep+1));
         }
+    }
+
+    /**
+     * Sets an environment variable that to the watch list
+     *
+     * @param key variable to register. Must already be aded as an environment variable
+     * @return true if the variable was newly registered to the watch list. false if the variable was already registered.
+     * @throws IllegalArgumentException if the variable was not added as an environment variable
+     */
+    public boolean setWatchedVar(String key) throws IllegalArgumentException {
+        if (this.containsKey(key)) {
+            return watchedVars.add(key);
+        } else {
+            throw new IllegalArgumentException(key + "is not an environment variable");
+        }
+    }
+
+    /**
+     * Gets the set of environment variables that are being monitored
+     *
+     * @return Collection of watched environment variables
+     */
+    public Set<String> getWatchedVars() {
+        return Collections.unmodifiableSet(watchedVars);
+    }
+
+    /**
+     *
+     * @param value
+     * @return
+     */
+    public List<String> isValueWatched(String value) {
+        List<String> hits = watchedVars.stream()
+                .filter(watched -> value.contains(this.get(watched)))
+                .collect(Collectors.toList());
+        return hits;
     }
 
     /**
