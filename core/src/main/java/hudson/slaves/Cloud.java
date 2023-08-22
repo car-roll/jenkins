@@ -39,6 +39,7 @@ import hudson.model.Describable;
 import hudson.model.Descriptor;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.model.Renamable;
 import hudson.model.Slave;
 import hudson.security.ACL;
 import hudson.security.AccessControlled;
@@ -47,6 +48,7 @@ import hudson.security.PermissionScope;
 import hudson.slaves.NodeProvisioner.PlannedNode;
 import hudson.util.DescriptorList;
 import hudson.util.FormApply;
+import hudson.util.FormValidation;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Objects;
@@ -107,7 +109,7 @@ import org.kohsuke.stapler.verb.POST;
  * @see NodeProvisioner
  * @see AbstractCloudImpl
  */
-public abstract class Cloud extends Actionable implements ExtensionPoint, Describable<Cloud>, AccessControlled {
+public abstract class Cloud extends Actionable implements ExtensionPoint, Describable<Cloud>, AccessControlled, Renamable {
 
     /**
      * Uniquely identifies this {@link Cloud} instance among other instances in {@link jenkins.model.Jenkins#clouds}.
@@ -310,16 +312,10 @@ public abstract class Cloud extends Actionable implements ExtensionPoint, Descri
         return new HttpRedirect("..");
     }
 
-    /**
-     * Accepts the update to the node name.
-     */
     @POST
-    public HttpResponse doRename(StaplerRequest req, StaplerResponse rsp) throws IOException, ServletException, Descriptor.FormException {
+    @Override
+    public HttpResponse doConfirmRename(StaplerRequest req, StaplerResponse rsp) throws IOException, ServletException, Descriptor.FormException {
         checkPermission(Jenkins.ADMINISTER);
-
-        if (FormApply.isApply(req)) {
-            throw new Descriptor.FormException(jenkins.agents.Messages.Cloud_CannotApplyRename(), "name");
-        }
 
         Jenkins j = Jenkins.get();
         Cloud cloud = j.getCloud(this.name);
@@ -335,11 +331,31 @@ public abstract class Cloud extends Actionable implements ExtensionPoint, Descri
         j.clouds.replace(this, result);
         j.save();
 
-        String reqPath = req.getOriginalRequestURI();
-        String[] uriTokens = reqPath.replaceFirst("^/", "").split("/");
+        String cloudId = getCloudId(req.getOriginalRequestURI(), proposedName);
+
+        // take the user to the renamed cloud top page.
+        return FormApply.success("../" + cloudId + "/");
+    }
+
+    @NonNull
+    @Override
+    public FormValidation doCheckNewName(String newName) {
+        return FormValidation.ok();
+    }
+
+    /**
+     * Called when changing cloud name. If the cloud name used in the cloud URL, replace it with new cloud name.
+     *
+     * @param requestUri URI used to submit name change
+     * @param proposedName New cloud name
+     * @return Either the appropriate cloud ID for the newly renamed cloud
+     * @throws ServletException when unexpected request URI received
+     */
+    private String getCloudId(String requestUri, String proposedName) throws ServletException {
+        String[] uriTokens = requestUri.replaceFirst("^/", "").split("/");
         if (uriTokens.length < 3 || !"rename".equals(uriTokens[uriTokens.length - 1])) {
             // We should never be here, expecting URI format jenkins/cloud/name/rename
-            throw new ServletException("Expected cloud rename URI: " + reqPath);
+            throw new ServletException("Expected cloud rename URI: " + requestUri);
         }
         String cloudId = uriTokens[uriTokens.length - 2];
         if (this.name.equals(cloudId)) {
@@ -347,17 +363,13 @@ public abstract class Cloud extends Actionable implements ExtensionPoint, Descri
             if (!proposedName.equals(this.name)) {
                 // name changed
                 cloudId = proposedName;
-            } else {
-                cloudId = this.name;
             }
         }
-
-        // take the user to the renamed cloud top page.
-        return FormApply.success("../" + cloudId);
+        return cloudId;
     }
 
     /**
-     * Accepts the update to the node configuration. Node name is not allowed to be changed.
+     * Accepts the update to the node configuration. Cloud name is not allowed to be changed, use {@link #doConfirmRename(StaplerRequest, StaplerResponse)} instead
      */
     @POST
     public HttpResponse doConfigSubmit(StaplerRequest req, StaplerResponse rsp) throws IOException, ServletException, Descriptor.FormException {
@@ -369,9 +381,10 @@ public abstract class Cloud extends Actionable implements ExtensionPoint, Descri
             throw new ServletException("No such cloud " + this.name);
         }
         Cloud result = cloud.reconfigure(req, req.getSubmittedForm());
-        String proposedName = result.name;
-        if (!proposedName.equals(this.name)) {
-            throw new Descriptor.FormException(jenkins.agents.Messages.Cloud_DoNotRename(), "name");
+        String resultName = result.name;
+        if (!resultName.equals(this.name)) {
+            // Name should never be changed in the config page
+            result.name = this.name;
         }
         j.clouds.replace(this, result);
         j.save();

@@ -34,6 +34,7 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.WithoutJenkins;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.HttpResponse;
 import org.kohsuke.stapler.StaplerResponse;
 
 public class CloudTest {
@@ -96,7 +97,12 @@ public class CloudTest {
     public void changeCloudName() throws Exception {
         ACloud aCloud = new ACloud("a", "0");
         j.jenkins.clouds.add(aCloud);
-        HtmlForm form = j.createWebClient().goTo(aCloud.getUrl() + "rename").getFormByName("config");
+        // DEBUG only
+        HtmlPage page = j.createWebClient().goTo(aCloud.getUrl());
+        System.out.println(page);
+        Thread.sleep(5000000);
+//
+        HtmlForm form = j.createWebClient().goTo(aCloud.getUrl() + "confirmRename").getFormByName("config");
         HtmlTextInput input = form.getInputByName("_.name");
         input.setText("b");
         j.submit(form);
@@ -112,8 +118,11 @@ public class CloudTest {
         HtmlForm form = j.createWebClient().goTo(aCloud.getUrl() + "configure").getFormByName("config");
         HtmlTextInput input = form.getInputByName("_.name");
         input.setText("b");
-        Exception ex = assertThrows(FailingHttpStatusCodeException.class, () -> j.submit(form));
-        assertTrue(ex.getMessage().contains("Bad Request"));
+//        Exception ex = assertThrows(FailingHttpStatusCodeException.class, () -> j.submit(form));
+//        assertTrue(ex.getMessage().contains("Bad Request"));
+        j.submit(form);
+        ACloud actual = j.jenkins.clouds.get(ACloud.class);
+        assertEquals("a", actual.getDisplayName());
     }
 
     public static final class ACloud extends AbstractCloudImpl {
