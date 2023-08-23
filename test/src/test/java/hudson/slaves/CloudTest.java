@@ -6,7 +6,6 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -23,7 +22,6 @@ import java.util.Collections;
 import jenkins.model.Jenkins;
 import jenkins.model.TransientActionFactory;
 import org.acegisecurity.acls.sid.Sid;
-import org.htmlunit.FailingHttpStatusCodeException;
 import org.htmlunit.html.HtmlForm;
 import org.htmlunit.html.HtmlPage;
 import org.htmlunit.html.HtmlTextInput;
@@ -34,7 +32,6 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.WithoutJenkins;
 import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.HttpResponse;
 import org.kohsuke.stapler.StaplerResponse;
 
 public class CloudTest {
@@ -98,11 +95,16 @@ public class CloudTest {
         ACloud aCloud = new ACloud("a", "0");
         j.jenkins.clouds.add(aCloud);
         // DEBUG only
-        HtmlPage page = j.createWebClient().goTo(aCloud.getUrl());
-        System.out.println(page);
-        Thread.sleep(5000000);
+//        HtmlPage page = j.createWebClient().goTo(aCloud.getUrl());
+//        System.out.println(page);
+//        Thread.sleep(5000000);
 //
-        HtmlForm form = j.createWebClient().goTo(aCloud.getUrl() + "confirmRename").getFormByName("config");
+        JenkinsRule.WebClient webClient = j.createWebClient();
+        HtmlPage cloudPage = webClient.goTo(aCloud.getUrl());
+        HtmlPage renamePage = webClient.goTo(aCloud.getUrl() + "confirmRename");
+//        HtmlPage renamePage = webClient.goTo(aCloud.getUrl() + "rename");
+        HtmlForm form = renamePage.getFormByName("config");
+//        HtmlForm form = j.createWebClient().goTo(aCloud.getUrl() + "confirmRename").getFormByName("config");
         HtmlTextInput input = form.getInputByName("_.name");
         input.setText("b");
         j.submit(form);

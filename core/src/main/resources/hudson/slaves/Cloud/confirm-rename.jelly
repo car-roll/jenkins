@@ -21,7 +21,28 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 -->
+<!--<?jelly escape-by-default='true'?>-->
+<!--<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:f="/lib/form">-->
+<!--  <l:layout permission="${app.ADMINISTER}" title="${%title(it.name)}">-->
+<!--    <st:include page="sidepanel.jelly"/>-->
+<!--    <l:breadcrumb title="${%Rename Cloud}"/>-->
+<!--    <l:main-panel>-->
+<!--      <f:form method="post" action="confirmRename" name="config" class="jenkins-form">-->
+<!--        <j:set var="instance" value="${it}"/>-->
+<!--        <j:set var="descriptor" value="${instance.descriptor}"/>-->
 
+<!--        <f:entry title="${%Name}" field="name">-->
+<!--          <f:textbox />-->
+<!--        </f:entry>-->
+
+<!--        <f:bottomButtonBar>-->
+<!--          <f:submit value="${%Save}"/>-->
+<!--        </f:bottomButtonBar>-->
+<!--      </f:form>-->
+<!--      <st:adjunct includes="lib.form.confirm"/>-->
+<!--    </l:main-panel>-->
+<!--  </l:layout>-->
+<!--</j:jelly>-->
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form" xmlns:i="jelly:fmt">
   <l:layout title="${%Rename}">

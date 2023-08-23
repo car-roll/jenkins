@@ -37,9 +37,9 @@ import hudson.model.Actionable;
 import hudson.model.Computer;
 import hudson.model.Describable;
 import hudson.model.Descriptor;
+import hudson.model.Failure;
 import hudson.model.Label;
 import hudson.model.Node;
-import hudson.model.Renamable;
 import hudson.model.Slave;
 import hudson.security.ACL;
 import hudson.security.AccessControlled;
@@ -62,6 +62,7 @@ import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.HttpRedirect;
 import org.kohsuke.stapler.HttpResponse;
+import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.interceptor.RequirePOST;
@@ -109,7 +110,7 @@ import org.kohsuke.stapler.verb.POST;
  * @see NodeProvisioner
  * @see AbstractCloudImpl
  */
-public abstract class Cloud extends Actionable implements ExtensionPoint, Describable<Cloud>, AccessControlled, Renamable {
+public abstract class Cloud extends Actionable implements ExtensionPoint, Describable<Cloud>, AccessControlled {
 
     /**
      * Uniquely identifies this {@link Cloud} instance among other instances in {@link jenkins.model.Jenkins#clouds}.
@@ -313,35 +314,63 @@ public abstract class Cloud extends Actionable implements ExtensionPoint, Descri
     }
 
     @POST
-    @Override
-    public HttpResponse doConfirmRename(StaplerRequest req, StaplerResponse rsp) throws IOException, ServletException, Descriptor.FormException {
+//    @Override
+//    public HttpResponse doConfirmRename(StaplerRequest req, StaplerResponse rsp) throws IOException, ServletException, Descriptor.FormException {
+    public HttpResponse doConfirmRename(@QueryParameter String newName) throws IOException, ServletException, Descriptor.FormException {
+//    public HttpResponse doRename(@QueryParameter String newName) throws IOException, ServletException, Descriptor.FormException {
         checkPermission(Jenkins.ADMINISTER);
 
+        newName = newName == null ? null : newName.trim();
         Jenkins j = Jenkins.get();
         Cloud cloud = j.getCloud(this.name);
         if (cloud == null) {
             throw new ServletException("No such cloud " + this.name);
         }
-        Cloud result = cloud.reconfigure(req, req.getSubmittedForm());
-        String proposedName = result.name;
-        if (!proposedName.equals(this.name)
-                && j.getCloud(proposedName) != null) {
-            throw new Descriptor.FormException(jenkins.agents.Messages.CloudSet_CloudAlreadyExists(proposedName), "name");
+        try {
+            Jenkins.checkGoodName(newName);
+            assert newName != null; // Would have thrown Failure
+            if (newName.equals(name)) {
+                return FormValidation.warning(hudson.model.Messages.AbstractItem_NewNameUnchanged());
+            }
+            if (!this.name.equals(newName)
+                    && j.getCloud(newName) != null) {
+                throw new Descriptor.FormException(jenkins.agents.Messages.CloudSet_CloudAlreadyExists(newName), "name");
+            }
+        } catch (Failure e) {
+            return FormValidation.error(e.getMessage());
         }
-        j.clouds.replace(this, result);
+        cloud.name = newName;
+//        j.clouds.replace(this, cloud);
         j.save();
 
-        String cloudId = getCloudId(req.getOriginalRequestURI(), proposedName);
+//        String cloudId = getCloudId(req.getOriginalRequestURI(), proposedName);
+
+
+//        Jenkins j = Jenkins.get();
+//        Cloud cloud = j.getCloud(this.name);
+//        if (cloud == null) {
+//            throw new ServletException("No such cloud " + this.name);
+//        }
+//        Cloud result = cloud.reconfigure(req, req.getSubmittedForm());
+//        String proposedName = result.name;
+//        if (!proposedName.equals(this.name)
+//                && j.getCloud(proposedName) != null) {
+//            throw new Descriptor.FormException(jenkins.agents.Messages.CloudSet_CloudAlreadyExists(proposedName), "name");
+//        }
+//        j.clouds.replace(this, result);
+//        j.save();
+//
+//        String cloudId = getCloudId(req.getOriginalRequestURI(), proposedName);
 
         // take the user to the renamed cloud top page.
-        return FormApply.success("../" + cloudId + "/");
+        return FormApply.success("../" + newName + "/");
     }
 
-    @NonNull
-    @Override
-    public FormValidation doCheckNewName(String newName) {
-        return FormValidation.ok();
-    }
+//    @NonNull
+//    @Override
+//    public FormValidation doCheckNewName(String newName) {
+//        return FormValidation.ok();
+//    }
 
     /**
      * Called when changing cloud name. If the cloud name used in the cloud URL, replace it with new cloud name.
